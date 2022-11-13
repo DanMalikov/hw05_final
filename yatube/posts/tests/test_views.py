@@ -1,5 +1,3 @@
-from http import HTTPStatus
-
 from django.contrib.auth import get_user_model
 from django.test import Client, TestCase
 from django.urls import reverse
@@ -53,11 +51,17 @@ class TaskPagesTests(TestCase):
             'text': forms.fields.CharField,
             'group': forms.fields.ChoiceField,
         }
+        cls.user_follower = User.objects.create_user(username='user')
+        cls.user_follower_2 = User.objects.create_user(username='user_1')
 
     def setUp(self):
         self.guest_client = Client()
         self.authorized_client = Client()
         self.authorized_client.force_login(self.user)
+        self.follow_client = Client()
+        self.follower_client = Client()
+        self.follow_client.force_login(self.user_follower_2)
+        self.follower_client.force_login(self.user_follower)
 
     def test_pages_uses_correct_template(self):
         """URL-адрес использует соответствующий шаблон."""
@@ -174,18 +178,26 @@ class TaskPagesTests(TestCase):
         self.assertEqual(0, len(posts))
 
     def test_post_detail_page_comment_for_guest_user(self):
-        '''Комментирование неавторизованным пользователем'''
+        '''
+        Проверка: Неавторизованный пользователь не может оставить комментарий
+        '''
+        comment_count = Comment.objects.count()
         form_data = {
             'text': 'text'
         }
-        response_member = self.guest_client.get(
+        self.guest_client.post(
             reverse('posts:add_comment', kwargs={
                 'post_id': self.post.pk}
             ),
             data=form_data,
             follow=True
         )
-        self.assertEqual(response_member.status_code, HTTPStatus.OK.value)
+        self.assertEqual(Comment.objects.count(), comment_count)
+        self.assertFalse(
+            Comment.objects.filter(
+                text='text',
+            ).exists()
+        )
 
     def test_comment(self):
         """Проверка: Комментарий появляется на странице поста."""
@@ -208,45 +220,43 @@ class TaskPagesTests(TestCase):
 
     def test_cache_index(self):
         """Кеширование главной страницы."""
+        post = Post.objects.create(
+            text='text',
+            author=self.user,
+            group=self.group
+        )
         first_try = self.authorized_client.get(reverse('posts:index'))
-        post = Post.objects.get(pk=1)
-        post.text = 'Текст'
-        post.save()
+        hold = first_try.context['page_obj'][0]
+        self.assertEqual(post, hold)
+        post.delete()
         second_try = self.authorized_client.get(reverse('posts:index'))
         self.assertEqual(first_try.content, second_try.content)
         cache.clear()
         third_try = self.authorized_client.get(reverse('posts:index'))
         self.assertNotEqual(first_try.content, third_try.content)
 
-
-class FollowTests(TestCase):
-    @classmethod
-    def setUpClass(cls):
-        super().setUpClass()
-        cls.user_follower = User.objects.create_user(username='user')
-        cls.user_follower_2 = User.objects.create_user(username='user_1')
-        cls.post = Post.objects.create(
-            author=cls.user_follower_2,
-            text='Тестовый текст',
-        )
-
-    def setUp(self):
-        self.follow_client = Client()
-        self.follower_client = Client()
-        self.follow_client.force_login(self.user_follower_2)
-        self.follower_client.force_login(self.user_follower)
-
     def test_follow(self):
         """Зарегистрированный может подписываться."""
         follower_count = Follow.objects.count()
+        self.assertFalse(
+            Follow.objects.filter(
+                user=self.user_follower,
+                author=self.user_follower_2,
+            ).exists())
+        self.assertEqual(follower_count, 0)
         self.follower_client.get(reverse(
             'posts:profile_follow',
             args=(self.user_follower_2.username,)))
         self.assertEqual(Follow.objects.count(), follower_count + 1)
+        self.assertTrue(
+            Follow.objects.filter(
+                user=self.user_follower,
+                author=self.user_follower_2,
+            ).exists())
 
     def test_unfollow(self):
         """Зарегистрированный может отписываться."""
-        Follow.objects.create(
+        Follow.objects.get_or_create(
             user=self.user_follower,
             author=self.user_follower_2
         )
@@ -258,7 +268,7 @@ class FollowTests(TestCase):
 
     def test_new_post_see_follower(self):
         """Пост появляется в ленте подписанных пользователей."""
-        posts = Post.objects.create(
+        new_post = Post.objects.create(
             text=self.post.text,
             author=self.user_follower_2,
         )
@@ -268,7 +278,7 @@ class FollowTests(TestCase):
         )
         response = self.follower_client.get(reverse('posts:follow_index'))
         post = response.context['page_obj'][0]
-        self.assertEqual(post, posts)
+        self.assertEqual(post, new_post)
         follow.delete()
         response_2 = self.follower_client.get(reverse('posts:follow_index'))
         self.assertEqual(len(response_2.context['page_obj']), 0)

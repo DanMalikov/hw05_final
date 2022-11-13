@@ -7,11 +7,12 @@
 {% load cache %}
 
 {% block content %}
+
   {% include 'posts/includes/switcher.html' %}
   <div class="container py-5">
     {% cache 20 index_page with page_obj %}
     {% for post in page_obj %}   
-      {% include 'posts/includes/post_card.html' with show_group_link=True %}
+      {% include 'posts/includes/post_card.html' with follow=True %}
     {% endfor %}
     {% endcache %} 
   </div>

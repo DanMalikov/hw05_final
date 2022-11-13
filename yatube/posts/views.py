@@ -2,7 +2,7 @@ from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
 from django.urls import reverse
 
-from .models import Post, Group, User, Comment, Follow
+from .models import Post, Group, User, Follow
 from .forms import PostForm, CommentForm
 from .utils import show_pages
 
@@ -43,13 +43,13 @@ def profile(request, username):
 def post_detail(request, post_id):
     post = get_object_or_404(Post, pk=post_id)
     post_amount = Post.objects.filter(author=post.author).count()
-    form = CommentForm(request.POST or None)
-    comment = Comment.objects.filter(post=post)
+    form = CommentForm()
+    comments = post.comments.all()
     context = {
         'post': post,
         'post_amount': post_amount,
         'form': form,
-        'comments': comment,
+        'comments': comments,
     }
     return render(request, 'posts/post_detail.html', context)
 
@@ -111,11 +111,11 @@ def follow_index(request):
 @login_required
 def profile_follow(request, username):
     user = request.user
-    author = User.objects.get(username=username)
-    is_follower = Follow.objects.filter(user=user, author=author)
-    if user != author and not is_follower.exists():
-        Follow.objects.create(user=user, author=author)
-    return redirect(reverse('posts:profile', args=[username]))
+    author = get_object_or_404(User, username=username)
+    if author != user:
+        Follow.objects.get_or_create(user=user, author=author)
+        return redirect(reverse('posts:profile', args=[username]))
+    return redirect('posts:index')
 
 
 @login_required
