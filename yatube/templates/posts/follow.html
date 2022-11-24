@@ -8,11 +8,11 @@
 
 {% block content %}
 
-  {% include 'posts/includes/switcher.html' %}
+  {% include 'posts/includes/switcher.html' with follow=True %}
   <div class="container py-5">
     {% cache 20 index_page with page_obj %}
     {% for post in page_obj %}   
-      {% include 'posts/includes/post_card.html' with follow=True %}
+      {% include 'posts/includes/post_card.html' %}
     {% endfor %}
     {% endcache %} 
   </div>
